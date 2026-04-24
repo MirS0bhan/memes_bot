@@ -2,9 +2,9 @@
 
 A personal Telegram inline bot to store and search media (photos, GIFs, videos, voice) by keywords.
 
----
+[فارسی](README.fa.md)
 
-## English
+---
 
 ### Requirements
 
@@ -17,14 +17,18 @@ A personal Telegram inline bot to store and search media (photos, GIFs, videos, 
 - `/newbot` → get your token
 - `/setinline` → enable inline mode, set a placeholder (e.g. `Search memes...`)
 
-**2. Get your Telegram user ID**
+**2. Find your Telegram user ID**
 
-Send a message to [@userinfobot](https://t.me/userinfobot) to find your numeric user ID.
+You need your numeric Telegram user ID to whitelist yourself.
+
+- **Easiest:** forward any message to [@userinfobot](https://t.me/userinfobot) — it replies with your ID
+- **Alternative:** open Telegram Web, click your profile, the number in the URL is your ID
+- **For multiple users:** repeat for each person and separate IDs with commas
 
 **3. Clone and configure**
 
 ```bash
-git clone https://git.goyban.space/goyban/memes_bot
+git clone https://git.goyban.com/goyban/memes_bot
 cd memes_bot
 cp .env.example .env
 ```
@@ -33,10 +37,8 @@ Edit `.env`:
 
 ```env
 BOT_TOKEN=your_telegram_bot_token_here
-ALLOWED_USERS=123456789
+ALLOWED_USERS=123456789,987654321
 ```
-
-`ALLOWED_USERS` is a comma-separated list of Telegram user IDs allowed to use the bot.
 
 **4. Run**
 
@@ -63,71 +65,6 @@ The database will be saved in `./bot_db/media.db`.
 ### Moving to another server
 
 The only files you need to transfer are:
-
-- `.env`
-- `bot_db/media.db`
-
----
-
-## فارسی
-
-### پیش‌نیازها
-
-- یک سرور با [Docker](https://docs.docker.com/engine/install/) نصب‌شده
-- توکن ربات تلگرام از [@BotFather](https://t.me/BotFather)
-
-### راه‌اندازی
-
-**۱. ساخت ربات در BotFather**
-- `/newbot` ← توکن بگیرید
-- `/setinline` ← حالت اینلاین را فعال کنید (مثلاً: `جستجوی میم...`)
-
-**۲. دریافت شناسه تلگرام**
-
-یک پیام به [@userinfobot](https://t.me/userinfobot) بفرستید تا ID عددی‌تان را بگیرید.
-
-**۳. کلون و تنظیم**
-
-```bash
-git clone https://git.goyban.space/goyban/memes_bot
-cd memes_bot
-cp .env.example .env
-```
-
-فایل `.env` را ویرایش کنید:
-
-```env
-BOT_TOKEN=توکن_ربات_شما
-ALLOWED_USERS=123456789
-```
-
-`ALLOWED_USERS` لیستی از شناسه‌های تلگرامی است که اجازه استفاده دارند (با کاما جدا کنید).
-
-**۴. اجرا**
-
-```bash
-docker compose up -d --build
-```
-
-دیتابیس در مسیر `./bot_db/media.db` ذخیره می‌شود.
-
-### نحوه استفاده
-
-**افزودن میم** — یک عکس، گیف، ویدیو یا صدا برای ربات بفرستید. ربات از شما کلیدواژه می‌خواهد. کلیدواژه‌ها را یکی‌یکی یا با کاما جدا بفرستید، سپس `/done` بزنید.
-
-**جستجوی اینلاین** — در هر چتی بنویسید `@نام_ربات کلیدواژه` تا نتایج نمایش داده شود.
-
-**دستورات**
-
-| دستور | توضیح |
-|---|---|
-| `/list` | نمایش همه رسانه‌های ذخیره‌شده |
-| `/delete <id>` | حذف یک مورد (ID را از `/list` بگیرید) |
-| `/cancel` | لغو عملیات جاری |
-
-### انتقال به سرور دیگر
-
-فقط کافی است این دو فایل را منتقل کنید:
 
 - `.env`
 - `bot_db/media.db`
