@@ -4,13 +4,13 @@ set -e
 cd "$(dirname "$0")"
 
 echo "⏹  Stopping..."
-docker compose down
+docker compose -f docker-compose.build.yaml down
 
 echo "🔨  Rebuilding..."
-docker compose build
+docker compose -f docker-compose.build.yaml build
 
 echo "▶  Starting..."
-docker compose up -d
+docker compose -f docker-compose.build.yaml up -d
 
 echo "📋  Logs (Ctrl-C to exit):"
-docker compose logs -f
+docker compose -f docker-compose.build.yaml logs -f

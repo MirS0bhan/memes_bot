@@ -17,9 +17,7 @@ async def init_db():
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_owner ON media(owner_id)"
-        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_owner ON media(owner_id)")
         await db.commit()
 
 
@@ -33,7 +31,7 @@ async def add_media(owner_id: int, file_id: str, file_unique_id: str, media_type
         await db.commit()
 
 
-async def search_media(user_id: int, query: str) -> list[dict]:
+async def search_media(query: str) -> list[dict]:
     query = query.strip().lower()
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -42,36 +40,53 @@ async def search_media(user_id: int, query: str) -> list[dict]:
                 """
                 SELECT id, file_id, file_unique_id, media_type, keywords
                 FROM media
-                WHERE owner_id = ? AND (',' || keywords || ',') LIKE ?
+                WHERE (',' || keywords || ',') LIKE ?
                 ORDER BY added_at DESC
                 LIMIT 50
                 """,
-                (user_id, f"%,{query}%"),
+                (f"%,{query}%",),
             )
         else:
             cursor = await db.execute(
                 """
                 SELECT id, file_id, file_unique_id, media_type, keywords
                 FROM media
-                WHERE owner_id = ?
                 ORDER BY added_at DESC
                 LIMIT 50
                 """,
-                (user_id,),
             )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
 
-async def delete_media(user_id: int, file_unique_id: str) -> bool:
+async def list_media() -> list[dict]:
+    return await search_media("")
+
+
+async def get_media_by_id(media_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, file_id, file_unique_id, media_type, keywords FROM media WHERE id = ?",
+            (media_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def update_media_keywords(media_id: int, keywords: list[str]) -> bool:
+    kw = ",".join(k.strip().lower() for k in keywords if k.strip())
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
-            "DELETE FROM media WHERE owner_id = ? AND file_unique_id = ?",
-            (user_id, file_unique_id),
+            "UPDATE media SET keywords = ? WHERE id = ?",
+            (kw, media_id),
         )
         await db.commit()
         return cur.rowcount > 0
 
 
-async def list_media(user_id: int) -> list[dict]:
-    return await search_media(user_id, "")
+async def delete_media(media_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("DELETE FROM media WHERE id = ?", (media_id,))
+        await db.commit()
+        return cur.rowcount > 0

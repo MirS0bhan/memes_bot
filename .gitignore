@@ -2,3 +2,4 @@
 bot_db/
 __pycache__/
 *.pyc
+push.sh
