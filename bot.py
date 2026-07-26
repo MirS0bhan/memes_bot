@@ -62,28 +62,41 @@ class EditMedia(StatesGroup):
     waiting_for_new_keywords = State()
 
 
+def menu_text(user_id: int) -> str:
+    if is_admin(user_id):
+        return (
+            "Send me any <b>photo, GIF, video, voice, or sticker</b>.\n"
+            "I'll ask you for keywords next.\n\n"
+            "/list — show all saved memes\n"
+            "/edit [search] — edit keywords of a meme\n"
+            "/delete &lt;id&gt; — remove a meme by ID\n"
+            "/cancel — cancel current operation"
+        )
+    return (
+        "Use me inline: type <code>@botname keyword</code> in any chat.\n\n"
+        "/list — browse all saved memes"
+    )
+
+
 # ── /start ───────────────────────────────────────────────────────────────────
 
 @dp.message(Command("start"))
 async def cmd_start(msg: Message):
     if not is_allowed(msg.from_user.id):
         return
-    if is_admin(msg.from_user.id):
-        await msg.answer(
-            "Send me any <b>photo, GIF, video, voice, or sticker</b>.\n"
-            "I'll ask you for keywords next.\n\n"
-            "/list — show all saved memes\n"
-            "/edit [search] — edit keywords of a meme\n"
-            "/delete &lt;id&gt; — remove a meme by ID\n"
-            "/cancel — cancel current operation",
-            parse_mode="HTML",
-        )
-    else:
-        await msg.answer(
-            "Use me inline: type <code>@botname keyword</code> in any chat.\n\n"
-            "/list — browse all saved memes",
-            parse_mode="HTML",
-        )
+    await msg.answer(
+        f"{menu_text(msg.from_user.id)}\n/menu — show this list again",
+        parse_mode="HTML",
+    )
+
+
+# ── /menu ────────────────────────────────────────────────────────────────────
+
+@dp.message(Command("menu"))
+async def cmd_menu(msg: Message):
+    if not is_allowed(msg.from_user.id):
+        return
+    await msg.answer(menu_text(msg.from_user.id), parse_mode="HTML")
 
 
 # ── /cancel ──────────────────────────────────────────────────────────────────

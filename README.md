@@ -58,7 +58,9 @@ The database will be saved in `./bot_db/media.db`.
 
 | Command | Description |
 |---|---|
+| `/menu` | Show the available commands |
 | `/list` | Show all saved media |
+| `/edit [search]` | Select a meme and edit its keywords (admin only) |
 | `/delete <id>` | Remove an entry (get ID from `/list`) |
 | `/cancel` | Cancel current add operation |
 
