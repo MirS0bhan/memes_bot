@@ -9,6 +9,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
+    BotCommand,
+    BotCommandScopeChat,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -40,6 +42,18 @@ ADMIN_USERS: set[int] = {
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+USER_COMMANDS = [
+    BotCommand(command="start", description="Start the bot"),
+    BotCommand(command="menu", description="Show available commands"),
+    BotCommand(command="list", description="Browse saved memes"),
+    BotCommand(command="cancel", description="Cancel current operation"),
+]
+ADMIN_COMMANDS = [
+    *USER_COMMANDS,
+    BotCommand(command="edit", description="Edit meme keywords"),
+    BotCommand(command="delete", description="Remove a meme by ID"),
+]
+
 
 def is_allowed(user_id: int) -> bool:
     if user_id in ADMIN_USERS:
@@ -52,6 +66,20 @@ def is_admin(user_id: int) -> bool:
     if ADMIN_USERS:
         return user_id in ADMIN_USERS
     return not ALLOWED_USERS or user_id in ALLOWED_USERS
+
+
+async def register_commands() -> None:
+    """Publish Telegram's command menu with role-appropriate suggestions."""
+    if not ADMIN_USERS:
+        await bot.set_my_commands(ADMIN_COMMANDS)
+        return
+
+    await bot.set_my_commands(USER_COMMANDS)
+    for admin_id in ADMIN_USERS:
+        await bot.set_my_commands(
+            ADMIN_COMMANDS,
+            scope=BotCommandScopeChat(chat_id=admin_id),
+        )
 
 
 class AddMedia(StatesGroup):
@@ -374,6 +402,7 @@ async def inline_handler(query: InlineQuery):
 
 async def main():
     await db.init_db()
+    await register_commands()
     log.info("Bot starting…")
     await dp.start_polling(bot)
 
