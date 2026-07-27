@@ -54,12 +54,17 @@ The database will be saved in `./bot_db/media.db`.
 
 **Searching inline** — in any chat type `@yourbotusername keyword` to search and send.
 
+Telegram suggests these commands as you type `/`, with a short description beside each suggestion.
+
 **Commands**
 
 | Command | Description |
 |---|---|
+| `/start` | Start the bot and show usage instructions |
+| `/menu` | Show the available commands |
 | `/list` | Show all saved media |
-| `/delete <id>` | Remove an entry (get ID from `/list`) |
+| `/edit [search]` | Select a meme and edit its keywords (admin only) |
+| `/delete <id>` | Remove an entry (get ID from `/list`; admin only) |
 | `/cancel` | Cancel current add operation |
 
 ### Moving to another server

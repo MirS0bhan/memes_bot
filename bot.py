@@ -9,6 +9,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
+    BotCommand,
+    BotCommandScopeChat,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -40,6 +42,18 @@ ADMIN_USERS: set[int] = {
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+USER_COMMANDS = [
+    BotCommand(command="start", description="Start the bot"),
+    BotCommand(command="menu", description="Show available commands"),
+    BotCommand(command="list", description="Browse saved memes"),
+    BotCommand(command="cancel", description="Cancel current operation"),
+]
+ADMIN_COMMANDS = [
+    *USER_COMMANDS,
+    BotCommand(command="edit", description="Edit meme keywords"),
+    BotCommand(command="delete", description="Remove a meme by ID"),
+]
+
 
 def is_allowed(user_id: int) -> bool:
     if user_id in ADMIN_USERS:
@@ -54,6 +68,20 @@ def is_admin(user_id: int) -> bool:
     return not ALLOWED_USERS or user_id in ALLOWED_USERS
 
 
+async def register_commands() -> None:
+    """Publish Telegram's command menu with role-appropriate suggestions."""
+    if not ADMIN_USERS:
+        await bot.set_my_commands(ADMIN_COMMANDS)
+        return
+
+    await bot.set_my_commands(USER_COMMANDS)
+    for admin_id in ADMIN_USERS:
+        await bot.set_my_commands(
+            ADMIN_COMMANDS,
+            scope=BotCommandScopeChat(chat_id=admin_id),
+        )
+
+
 class AddMedia(StatesGroup):
     waiting_for_keywords = State()
 
@@ -62,28 +90,41 @@ class EditMedia(StatesGroup):
     waiting_for_new_keywords = State()
 
 
+def menu_text(user_id: int) -> str:
+    if is_admin(user_id):
+        return (
+            "Send me any <b>photo, GIF, video, voice, or sticker</b>.\n"
+            "I'll ask you for keywords next.\n\n"
+            "/list — show all saved memes\n"
+            "/edit [search] — edit keywords of a meme\n"
+            "/delete &lt;id&gt; — remove a meme by ID\n"
+            "/cancel — cancel current operation"
+        )
+    return (
+        "Use me inline: type <code>@botname keyword</code> in any chat.\n\n"
+        "/list — browse all saved memes"
+    )
+
+
 # ── /start ───────────────────────────────────────────────────────────────────
 
 @dp.message(Command("start"))
 async def cmd_start(msg: Message):
     if not is_allowed(msg.from_user.id):
         return
-    if is_admin(msg.from_user.id):
-        await msg.answer(
-            "Send me any <b>photo, GIF, video, voice, or sticker</b>.\n"
-            "I'll ask you for keywords next.\n\n"
-            "/list — show all saved memes\n"
-            "/edit [search] — edit keywords of a meme\n"
-            "/delete &lt;id&gt; — remove a meme by ID\n"
-            "/cancel — cancel current operation",
-            parse_mode="HTML",
-        )
-    else:
-        await msg.answer(
-            "Use me inline: type <code>@botname keyword</code> in any chat.\n\n"
-            "/list — browse all saved memes",
-            parse_mode="HTML",
-        )
+    await msg.answer(
+        f"{menu_text(msg.from_user.id)}\n/menu — show this list again",
+        parse_mode="HTML",
+    )
+
+
+# ── /menu ────────────────────────────────────────────────────────────────────
+
+@dp.message(Command("menu"))
+async def cmd_menu(msg: Message):
+    if not is_allowed(msg.from_user.id):
+        return
+    await msg.answer(menu_text(msg.from_user.id), parse_mode="HTML")
 
 
 # ── /cancel ──────────────────────────────────────────────────────────────────
@@ -361,6 +402,7 @@ async def inline_handler(query: InlineQuery):
 
 async def main():
     await db.init_db()
+    await register_commands()
     log.info("Bot starting…")
     await dp.start_polling(bot)
 
