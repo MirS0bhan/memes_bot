@@ -414,22 +414,23 @@ async def on_send(callback: CallbackQuery, state: FSMContext):
 
 @dp.inline_query()
 async def inline_handler(query: InlineQuery):
-    user = await ensure_user(query)
-    if is_banned(user):
-        await query.answer([], cache_time=1)
-        return
-    allowed = await rate_limit(
-        f"rl:inline:{user.telegram_id}", settings.inline_rate_per_min, 60
-    )
-    if not allowed:
-        await query.answer([], cache_time=5)
-        return
+    results = []
     try:
+        user = await ensure_user(query)
+        if is_banned(user):
+            await query.answer([], cache_time=1)
+            return
+        allowed = await rate_limit(
+            f"rl:inline:{user.telegram_id}", settings.inline_rate_per_min, 60
+        )
+        if not allowed:
+            await query.answer([], cache_time=5)
+            return
+
         results_raw = await search(
             query.query, user.telegram_id, include_nsfw=False, limit=50
         )
         INLINE_QUERIES.inc()
-        results = []
         for item in results_raw:
             rid = str(uuid.uuid4())
             label = item["title"] or ", ".join(item["tags"])
@@ -447,16 +448,26 @@ async def inline_handler(query: InlineQuery):
                 results.append(InlineQueryResultCachedAudio(id=rid, audio_file_id=fid, title=label))
             elif mt == MediaType.STICKER:
                 results.append(InlineQueryResultCachedSticker(id=rid, sticker_file_id=fid))
+
         if not results:
             results = [InlineQueryResultArticle(
                 id="noop", title="No results",
                 input_message_content=InputTextMessageContent(message_text="—"),
                 description=f"No memes for '{query.query}'",
             )]
+            # Do not cache empty results, otherwise new memes stay hidden for the
+            # full cache window and inline looks broken.
+            await query.answer(results, cache_time=1, is_personal=True)
+            return
+
         await query.answer(results, cache_time=settings.inline_cache_seconds, is_personal=True)
     except Exception:
-        logger.exception("inline_handler error user=%s query=%r", user.telegram_id, query.query)
-        await query.answer([], cache_time=1)
+        logger.exception("inline_handler error query=%r", query.query)
+        if not results:
+            try:
+                await query.answer([], cache_time=1)
+            except Exception:
+                pass
 
 
 # ── review-channel voting ───────────────────────────────────────────────────────
