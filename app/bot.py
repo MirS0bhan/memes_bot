@@ -14,6 +14,7 @@ from aiogram.types import (
     BotCommand,
     BotCommandScopeChat,
     CallbackQuery,
+    ErrorEvent,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQuery,
@@ -58,6 +59,7 @@ from app.repo import (
 )
 from app.search import search
 from app.storage import download_bytes, key_for, purge_media, send_media, store_media
+from app.i18n import t, normalize_locale, SUPPORTED_LOCALES, DEFAULT_LOCALE
 from app.metrics import (
     INLINE_QUERIES,
     REPORTS_FILED,
@@ -95,6 +97,17 @@ def is_admin(telegram_id: int) -> bool:
 
 def is_banned(user: User) -> bool:
     return bool(user.is_banned)
+
+
+def _loc(user: User | None) -> str:
+    return normalize_locale(getattr(user, "locale", None))
+
+
+@dp.error()
+async def on_error(event: ErrorEvent) -> bool:
+    """Catch unhandled exceptions in handlers: log and keep the dispatcher alive."""
+    logger.exception("Unhandled error in update handler", exc_info=event.exception)
+    return True
 
 
 async def ensure_user(msg: Message | CallbackQuery) -> User:
@@ -144,6 +157,7 @@ USER_COMMANDS = [
     BotCommand(command="add", description="Reply to media to save to private pool"),
     BotCommand(command="suggest", description="Reply to media to propose to public pool"),
     BotCommand(command="mystatus", description="Your quota, trust & penalties"),
+    BotCommand(command="language", description="Set UI language (en/fa)"),
     BotCommand(command="report", description="Report a public meme"),
     BotCommand(command="appeal", description="Appeal a removal"),
     BotCommand(command="policy", description="Show governance policy"),
@@ -168,15 +182,9 @@ async def register_commands() -> None:
 
 @dp.message(Command("start"))
 async def cmd_start(msg: Message):
-    if not is_admin(msg.from_user.id) and not settings.review_channel_id:
-        pass
+    user = await ensure_user(msg)
     await msg.answer(
-        "👋 <b>MemeBot</b>\n"
-        "• Type <code>@" + (settings.bot_username or "yourbot") + " keyword</code> inline in any chat.\n"
-        "• <code>/find keyword</code> to browse with buttons.\n"
-        "• <code>/add</code> (reply to media) saves to your private pool.\n"
-        "• <code>/suggest</code> (reply to media) proposes to the public pool.\n"
-        "• <code>/policy</code> for governance rules.",
+        t("start", _loc(user), bot=settings.bot_username or "yourbot"),
         parse_mode="HTML",
     )
 
@@ -184,7 +192,7 @@ async def cmd_start(msg: Message):
 @dp.message(Command("cancel"))
 async def cmd_cancel(msg: Message, state: FSMContext):
     await state.clear()
-    await msg.answer("Cancelled.")
+    await msg.answer(t("cancelled", _loc(await ensure_user(msg))))
 
 
 # ── /add & /suggest ─────────────────────────────────────────────────────────────
@@ -192,27 +200,28 @@ async def cmd_cancel(msg: Message, state: FSMContext):
 @dp.message(Command("add"))
 async def cmd_add(msg: Message, state: FSMContext):
     if not msg.reply_to_message or not _extract_media(msg.reply_to_message):
-        await msg.answer("Reply to a photo / GIF / video / voice / sticker with /add.")
+        await msg.answer(t("add_reply_prompt", _loc(await ensure_user(msg))))
         return
     fid, fuid, mtype = _extract_media(msg.reply_to_message)
     await state.set_state(CaptureMedia.waiting_for_title)
     await state.update_data(file_id=fid, file_unique_id=fuid, media_type=mtype.value, target="private")
-    await msg.answer("Saving to your <b>private</b> pool. Send a short title.", parse_mode="HTML")
+    await msg.answer(t("title_prompt", _loc(await ensure_user(msg))), parse_mode="HTML")
 
 
 @dp.message(Command("suggest"))
 async def cmd_suggest(msg: Message, state: FSMContext):
+    user = await ensure_user(msg)
     if not settings.review_channel_id:
-        await msg.answer("Public suggestions are not configured (REVIEW_CHANNEL_ID missing).")
+        await msg.answer(t("suggest_not_configured", _loc(user)))
         return
     if not msg.reply_to_message or not _extract_media(msg.reply_to_message):
-        await msg.answer("Reply to a photo / GIF / video / voice / sticker with /suggest.")
+        await msg.answer(t("suggest_reply_prompt", _loc(user)))
         return
     fid, fuid, mtype = _extract_media(msg.reply_to_message)
     await state.set_state(CaptureMedia.waiting_for_title)
     await state.update_data(file_id=fid, file_unique_id=fuid, media_type=mtype.value, target="public")
     await msg.answer(
-        "Proposing to the <b>public</b> pool. Send a short title.", parse_mode="HTML"
+        t("suggest_title_prompt", _loc(user)), parse_mode="HTML"
     )
 
 
@@ -220,14 +229,14 @@ async def cmd_suggest(msg: Message, state: FSMContext):
 async def on_title(msg: Message, state: FSMContext):
     await state.update_data(title=msg.text.strip())
     await state.set_state(CaptureMedia.waiting_for_tags)
-    await msg.answer("Now send tags (comma-separated, e.g. <code>cat, surprised, funny</code>).", parse_mode="HTML")
+    await msg.answer(t("tags_prompt", _loc(await ensure_user(msg))), parse_mode="HTML")
 
 
 @dp.message(CaptureMedia.waiting_for_tags, F.text)
 async def on_tags(msg: Message, state: FSMContext):
     tags = [t.strip().lower() for t in msg.text.split(",") if t.strip()]
     if not tags:
-        await msg.answer("No tags detected. Send at least one, comma-separated.")
+        await msg.answer(t("tags_empty", _loc(await ensure_user(msg))))
         return
     await state.update_data(tags=tags)
     await state.set_state(CaptureMedia.waiting_for_nsfw)
@@ -237,7 +246,7 @@ async def on_tags(msg: Message, state: FSMContext):
             InlineKeyboardButton(text="No", callback_data="nsfw:no"),
         ]
     ])
-    await msg.answer("Is this meme NSFW? (affects visibility rules)", reply_markup=kb)
+    await msg.answer(t("nsfw_prompt", _loc(await ensure_user(msg))), reply_markup=kb)
 
 
 @dp.callback_query(CaptureMedia.waiting_for_nsfw, F.data.startswith("nsfw:"))
@@ -246,14 +255,15 @@ async def on_nsfw(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     await state.clear()
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer("Working…")
+    await callback.message.answer(t("working", _loc(await ensure_user(callback))))
     await _finalize_capture(callback.message, data, nsfw)
 
 
 async def _finalize_capture(msg: Message, data: dict, nsfw: bool) -> None:
     user = await ensure_user(msg)
+    loc = _loc(user)
     if is_banned(user):
-        await msg.answer("You are banned.")
+        await msg.answer(t("banned", loc))
         return
     file_id = data["file_id"]
     mtype = MediaType(data["media_type"])
@@ -282,7 +292,7 @@ async def _finalize_capture(msg: Message, data: dict, nsfw: bool) -> None:
         if target == "public":
             existing = await find_public_by_hash(session, file_hash)
             if existing:
-                await msg.answer("ℹ️ This media is already in the public pool — not creating a duplicate.")
+                await msg.answer(t("duplicate_public", loc))
                 return
             meme = Meme(
                 owner_id=user.id,
@@ -299,17 +309,15 @@ async def _finalize_capture(msg: Message, data: dict, nsfw: bool) -> None:
             session.add(meme)
             await session.flush()
             await session.commit()
-            await open_submission(bot, session, meme, user)
-            await msg.answer(
-                "✅ Submitted to the public pool! It will be voted on in the review channel."
-            )
+            await open_submission(bot, session, meme, user, locale=loc)
+            await msg.answer(t("submitted_public", loc))
             SUBMISSIONS_OPENED.inc()
             log_event(logger, "submission_opened", meme_id=str(meme.id), user=user.telegram_id)
         else:
             count, quota = await private_usage(session, user.id)
             if count >= quota:
                 await msg.answer(
-                    f"⚠️ Private quota reached ({count}/{quota}). Delete an old meme or /suggest it instead."
+                    t("quota_reached", loc, count=count, quota=quota)
                 )
                 return
             meme = Meme(
@@ -327,8 +335,9 @@ async def _finalize_capture(msg: Message, data: dict, nsfw: bool) -> None:
             await session.commit()
             log_event(logger, "private_meme_added", meme_id=str(meme.id), user=user.telegram_id)
             await msg.answer(
-                f"💾 Saved to your private pool ({count + 1}/{quota}). "
-                f"Tags: <b>{', '.join(data['tags'])}</b>", parse_mode="HTML"
+                t("saved_private", loc, count=count + 1, quota=quota,
+                  tags=", ".join(data["tags"])),
+                parse_mode="HTML",
             )
 
 
@@ -338,13 +347,15 @@ class FindFlow(StatesGroup):
     pass
 
 
-async def _render_find(target: Message | CallbackQuery, state: FSMContext) -> None:
+async def _render_find(
+    target: Message | CallbackQuery, state: FSMContext, owner_id: int, locale: str
+) -> None:
     data = await state.get_data()
     query = data.get("query", "")
     offset = int(data.get("offset", 0))
-    results = await search(query, target.from_user.id, include_nsfw=False, limit=8, offset=offset)
+    results = await search(query, owner_id, include_nsfw=False, limit=8, offset=offset)
     if not results:
-        text = f"No memes found for “{query}”." if query else "No memes yet."
+        text = t("find_no_results", locale, query=query) if query else t("no_memes", locale)
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text)
         else:
@@ -372,16 +383,18 @@ async def _render_find(target: Message | CallbackQuery, state: FSMContext) -> No
 
 @dp.message(Command("find"))
 async def cmd_find(msg: Message, state: FSMContext):
+    user = await ensure_user(msg)
     q = msg.text.replace("/find", "", 1).strip()
     await state.update_data(query=q, offset=0)
-    await _render_find(msg, state)
+    await _render_find(msg, state, user.id, _loc(user))
 
 
 @dp.callback_query(F.data.startswith("more:"))
 async def on_more(callback: CallbackQuery, state: FSMContext):
+    user = await ensure_user(callback)
     offset = int(callback.data.split(":", 1)[1])
     await state.update_data(offset=offset)
-    await _render_find(callback, state)
+    await _render_find(callback, state, user.id, _loc(user))
 
 
 @dp.callback_query(F.data.startswith("send:"))
@@ -416,6 +429,7 @@ async def on_send(callback: CallbackQuery, state: FSMContext):
 async def inline_handler(query: InlineQuery):
     results = []
     try:
+        logger.info("inline_query recv q=%r user=%s", query.query, query.from_user.id)
         user = await ensure_user(query)
         if is_banned(user):
             await query.answer([], cache_time=1)
@@ -428,7 +442,7 @@ async def inline_handler(query: InlineQuery):
             return
 
         results_raw = await search(
-            query.query, user.telegram_id, include_nsfw=False, limit=50
+            query.query, user.id, include_nsfw=False, limit=50
         )
         INLINE_QUERIES.inc()
         for item in results_raw:
@@ -453,7 +467,7 @@ async def inline_handler(query: InlineQuery):
             results = [InlineQueryResultArticle(
                 id="noop", title="No results",
                 input_message_content=InputTextMessageContent(message_text="—"),
-                description=f"No memes for '{query.query}'",
+                description=t("find_no_results", _loc(user), query=query.query),
             )]
             # Do not cache empty results, otherwise new memes stay hidden for the
             # full cache window and inline looks broken.
@@ -476,15 +490,18 @@ async def inline_handler(query: InlineQuery):
 async def on_vote(callback: CallbackQuery):
     _, sub_id, value = callback.data.split(":")
     user = await ensure_user(callback)
+    loc = _loc(user)
     try:
         async with SessionLocal() as session:
             result = await cast_vote(
                 bot, session, UUID(sub_id), user, VoteValue(value)
             )
         if result["status"] == "closed":
-            await callback.answer(f"Vote counted — submission {result['decision']}.", show_alert=True)
+            await callback.answer(
+                t("vote_counted_closed", loc, decision=result["decision"]), show_alert=True
+            )
         else:
-            await callback.answer(f"Vote counted (net {result['net']:.1f}).")
+            await callback.answer(t("vote_counted", loc, net=result["net"]))
         VOTES_CAST.inc()
     except GovernanceError as e:
         await callback.answer(str(e), show_alert=True)
@@ -495,12 +512,12 @@ async def on_removal_review(callback: CallbackQuery):
     _, meme_id, decision = callback.data.split(":")
     user = await ensure_user(callback)
     if is_banned(user):
-        await callback.answer("Banned.", show_alert=True)
+        await callback.answer(t("banned", _loc(user)), show_alert=True)
         return
     try:
         async with SessionLocal() as session:
             await cast_removal_review_vote(bot, session, UUID(meme_id), user, keep=(decision == "keep"))
-        await callback.answer("Removal review vote counted.")
+        await callback.answer(t("removal_vote_counted", _loc(user)))
     except GovernanceError as e:
         await callback.answer(str(e), show_alert=True)
 
@@ -509,9 +526,10 @@ async def on_removal_review(callback: CallbackQuery):
 
 @dp.message(Command("report"))
 async def cmd_report(msg: Message, state: FSMContext):
+    loc = _loc(await ensure_user(msg))
     parts = msg.text.split(maxsplit=2)
     if len(parts) < 2:
-        await msg.answer("Usage: /report <meme_id> — a reason picker will appear.")
+        await msg.answer(t("report_usage", loc))
         return
     meme_id = parts[1].strip()
     reasons = [r for r in ReportReason]
@@ -519,23 +537,24 @@ async def cmd_report(msg: Message, state: FSMContext):
         [InlineKeyboardButton(text=r.value, callback_data=f"rep:{meme_id}:{r.value}")]
         for r in reasons
     ]
-    await msg.answer("Pick a report reason:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await msg.answer(t("report_usage", loc), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 @dp.callback_query(F.data.startswith("rep:"))
 async def on_report_reason(callback: CallbackQuery):
     _, meme_id, reason = callback.data.split(":", 2)
     user = await ensure_user(callback)
+    loc = _loc(user)
     try:
         async with SessionLocal() as session:
             outcome = await file_report(
                 bot, session, UUID(meme_id), user, ReportReason(reason)
             )
         if outcome == "removal_review_started":
-            await callback.answer("Reported — threshold reached, removal review opened.", show_alert=True)
+            await callback.answer(t("report_threshold", loc), show_alert=True)
             REMOVAL_REVIEWS.inc()
         else:
-            await callback.answer("Report recorded. Thank you.", show_alert=True)
+            await callback.answer(t("report_recorded", loc), show_alert=True)
         REPORTS_FILED.inc()
         await callback.message.edit_reply_markup(reply_markup=None)
     except GovernanceError as e:
@@ -546,9 +565,10 @@ async def on_report_reason(callback: CallbackQuery):
 
 @dp.message(Command("appeal"))
 async def cmd_appeal(msg: Message):
+    loc = _loc(await ensure_user(msg))
     parts = msg.text.split(maxsplit=2)
     if len(parts) < 3:
-        await msg.answer("Usage: /appeal <meme_id> <reason>")
+        await msg.answer(t("appeal_usage", loc))
         return
     meme_id = parts[1].strip()
     reason = parts[2].strip()
@@ -556,19 +576,20 @@ async def cmd_appeal(msg: Message):
     try:
         async with SessionLocal() as session:
             outcome = await open_appeal(bot, session, UUID(meme_id), user, reason)
-        await msg.answer("📨 Appeal opened for admin review.")
+        await msg.answer(t("appeal_opened", loc))
     except GovernanceError as e:
         await msg.answer(str(e))
 
 
 # ── /mystatus ───────────────────────────────────────────────────────────────────
 
-@dp.message(Command("mystatus"))
+@dp.message(Command("mystatus", "status"))
 async def cmd_mystatus(msg: Message):
     from app.policy import vote_weight
     from sqlalchemy import func, select
 
     user = await ensure_user(msg)
+    loc = _loc(user)
     async with SessionLocal() as session:
         count, quota = await private_usage(session, user.id)
         open_subs = await session.scalar(
@@ -578,16 +599,37 @@ async def cmd_mystatus(msg: Message):
         )
         open_subs = open_subs or 0
     weight = vote_weight(user)
-    penalty = " (penalized)" if user.trust_score < 50 else ""
+    penalty = t("penalty", loc) if user.trust_score < 50 else ""
     await msg.answer(
-        f"📊 <b>Your status</b>\n"
-        f"• Private pool: {count}/{quota}\n"
-        f"• Trust score: {user.trust_score}{penalty}\n"
-        f"• Vote weight: {weight}\n"
-        f"• Open submissions: {open_subs}\n"
-        f"• Banned: {'yes' if user.is_banned else 'no'}",
+        t(
+            "mystatus", loc,
+            count=count, quota=quota, trust=user.trust_score, penalty=penalty,
+            weight=weight, open_subs=open_subs,
+            banned="yes" if user.is_banned else "no",
+        ),
         parse_mode="HTML",
     )
+
+
+# ── /language ─────────────────────────────────────────────────────────────────────
+
+@dp.message(Command("language"))
+async def cmd_language(msg: Message):
+    user = await ensure_user(msg)
+    loc = _loc(user)
+    parts = msg.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await msg.answer(t("language_current", loc, lang=user.locale))
+        return
+    new_loc = normalize_locale(parts[1].strip().lower())
+    if new_loc not in SUPPORTED_LOCALES:
+        await msg.answer(t("language_usage", loc))
+        return
+    async with SessionLocal() as session:
+        u = await session.get(User, user.id)
+        u.locale = new_loc
+        await session.commit()
+    await msg.answer(t("language_set", new_loc, lang=new_loc))
 
 
 # ── /policy ──────────────────────────────────────────────────────────────────────
@@ -596,52 +638,32 @@ async def cmd_mystatus(msg: Message):
 async def cmd_policy(msg: Message):
     from app.policy import DEFAULT_POLICY_VERSION
 
+    loc = _loc(await ensure_user(msg))
     async with SessionLocal() as session:
         doc = await session.get(PolicyDocument, DEFAULT_POLICY_VERSION)
-    body = doc.body if doc else "Policy not found."
+    body = doc.body if doc else t("policy_not_found", loc)
     # Send in chunks to respect Telegram message limits.
     for i in range(0, len(body), 4000):
         await msg.answer(body[i:i + 4000])
-
-
-# ── admin manual removal ─────────────────────────────────────────────────────────
-
-@dp.message(Command("admin"))
-async def cmd_admin(msg: Message):
-    if not is_admin(msg.from_user.id):
-        await msg.answer("Not authorized.")
-        return
-    parts = msg.text.split(maxsplit=3)
-    if len(parts) < 4 or parts[1] != "remove":
-        await msg.answer("Usage: /admin remove <meme_id> <policy clause>")
-        return
-    meme_id = parts[2].strip()
-    clause = parts[3].strip()
-    user = await ensure_user(msg)
-    try:
-        async with SessionLocal() as session:
-            await admin_remove(bot, session, UUID(meme_id), user, clause)
-        await msg.answer("Removed (admin manual).")
-    except GovernanceError as e:
-        await msg.answer(str(e))
 
 
 # ── /downvote (community downvote after the fact, spec §5.5.4) ──────────────────
 
 @dp.message(Command("downvote"))
 async def cmd_downvote(msg: Message):
+    loc = _loc(await ensure_user(msg))
     parts = msg.text.split(maxsplit=1)
     if len(parts) < 2:
-        await msg.answer("Usage: /downvote <meme_id>")
+        await msg.answer(t("downvote_usage", loc))
         return
     user = await ensure_user(msg)
     try:
         async with SessionLocal() as session:
             outcome = await community_downvote(bot, session, UUID(parts[1].strip()), user)
         if outcome == "removal_review_started":
-            await msg.answer("Downvote recorded — threshold reached, removal review opened.")
+            await msg.answer(t("downvote_threshold", loc))
         else:
-            await msg.answer("👎 Downvote recorded.")
+            await msg.answer(t("downvote_recorded", loc))
     except GovernanceError as e:
         await msg.answer(str(e))
 
@@ -650,10 +672,11 @@ async def cmd_downvote(msg: Message):
 
 @dp.message(Command("removals"))
 async def cmd_removals(msg: Message):
+    loc = _loc(await ensure_user(msg))
     async with SessionLocal() as session:
         rows = await recent_removal_cases(session, limit=20)
     if not rows:
-        await msg.answer("No removals recorded yet.")
+        await msg.answer(t("removals_none", loc))
         return
     lines = []
     for r in rows:
@@ -661,7 +684,7 @@ async def cmd_removals(msg: Message):
             f"• <code>{r['title']}</code> — {r['decision']} "
             f"<i>({r['clause']})</i> {r['created_at'][:10] if r['created_at'] else ''}"
         )
-    await msg.answer("🗂 <b>Recent removal cases</b>\n" + "\n".join(lines), parse_mode="HTML")
+    await msg.answer(t("removals_header", loc) + "\n" + "\n".join(lines), parse_mode="HTML")
 
 
 # ── admin blocklist / policy management ────────────────────────────────────────
@@ -669,23 +692,24 @@ async def cmd_removals(msg: Message):
 @dp.message(Command("admin"))
 async def cmd_admin(msg: Message):
     if not is_admin(msg.from_user.id):
-        await msg.answer("Not authorized.")
+        await msg.answer(t("not_authorized", _loc(await ensure_user(msg))))
         return
+    loc = _loc(await ensure_user(msg))
     parts = msg.text.split(maxsplit=3)
     if len(parts) < 2:
-        await msg.answer("Usage: /admin <remove|block|unblock|policy> …")
+        await msg.answer(t("admin_usage", loc))
         return
     sub = parts[1]
     user = await ensure_user(msg)
 
     if sub == "remove":
         if len(parts) < 4:
-            await msg.answer("Usage: /admin remove <meme_id> <policy clause>")
+            await msg.answer(t("remove_usage", loc))
             return
         try:
             async with SessionLocal() as session:
                 await admin_remove(bot, session, UUID(parts[2].strip()), user, parts[3].strip())
-            await msg.answer("Removed (admin manual).")
+            await msg.answer(t("removed_admin", loc))
         except GovernanceError as e:
             await msg.answer(str(e))
         return
@@ -693,29 +717,29 @@ async def cmd_admin(msg: Message):
     if sub == "block":
         h = parts[2].strip() if len(parts) > 2 else ""
         if not h:
-            await msg.answer("Usage: /admin block <sha256_hash>")
+            await msg.answer(t("block_usage", loc))
             return
         async with SessionLocal() as session:
             await add_illegal_hash(session, h, note=f"by {user.telegram_id}")
             await session.commit()
-        await msg.answer("Blocklist entry added.")
+        await msg.answer(t("blocklist_added", loc))
         return
 
     if sub == "unblock":
         h = parts[2].strip() if len(parts) > 2 else ""
         if not h:
-            await msg.answer("Usage: /admin unblock <sha256_hash>")
+            await msg.answer(t("unblock_usage", loc))
             return
         async with SessionLocal() as session:
             removed = await remove_illegal_hash(session, h)
             await session.commit()
-        await msg.answer("Blocklist entry removed." if removed else "Not found.")
+        await msg.answer(t("blocklist_removed", loc) if removed else t("blocklist_not_found", loc))
         return
 
     if sub == "policy":
         body = parts[2] if len(parts) > 2 else ""
         if not body:
-            await msg.answer("Usage: /admin policy <new markdown body>")
+            await msg.answer(t("policy_usage", loc))
             return
         from app.policy import DEFAULT_POLICY_VERSION
 
@@ -730,7 +754,7 @@ async def cmd_admin(msg: Message):
         await msg.answer(f"Policy v{DEFAULT_POLICY_VERSION} updated.")
         return
 
-    await msg.answer("Unknown admin subcommand.")
+    await msg.answer(t("unknown_admin_sub", loc))
 
 
 # ── main ─────────────────────────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ from app.enums import (
 from app.models import Meme, RemovalCase, Report, Submission, User, Vote
 from app.policy import evaluate_submission
 from app.redis_client import get_redis
+from app.i18n import t
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -77,7 +78,7 @@ def _vote_keyboard(submission_id: UUID) -> InlineKeyboardMarkup:
 # ── public submission lifecycle ──────────────────────────────────────────────
 
 async def open_submission(
-    bot: Bot, session: AsyncSession, meme: Meme, submitter: User
+    bot: Bot, session: AsyncSession, meme: Meme, submitter: User, locale: str = "en"
 ) -> Submission:
     submission = Submission(
         meme_id=meme.id,
@@ -89,10 +90,16 @@ async def open_submission(
 
     if settings.review_channel_id:
         caption = (
-            f"New submission\nTitle: {meme.title}\n"
-            f"Tags: {', '.join(meme.tags)}\n"
-            f"NSFW: {'yes' if meme.nsfw else 'no'}\n"
-            f"By: @{submitter.username or submitter.telegram_id}"
+            t(
+                "channel_submission_caption",
+                locale,
+                title=meme.title,
+                tags=", ".join(meme.tags),
+                nsfw=("yes" if meme.nsfw else "no"),
+                by=f"@{submitter.username or submitter.telegram_id}",
+            )
+            + "\n"
+            + t("channel_vote_help", locale)
         )
         msg = await _post_channel_media(
             bot, settings.review_channel_id, meme, caption
@@ -159,22 +166,22 @@ async def cast_vote(
     return {"status": "open", "net": net, "up": up}
 
 
-def _vote_weight(user: User) -> float:
-    from app.policy import vote_weight
-
-    return vote_weight(user)
-
-
 async def _edit_submission_caption(bot: Bot, submission: Submission, net: float, up: int) -> None:
     try:
         await bot.edit_message_caption(
             chat_id=settings.review_channel_id,
             message_id=submission.channel_message_id,
-            caption=f"Voting… net={net:.1f} 👍={up}",
+            caption=t("channel_voting_progress", "en", net=net, up=up),
             reply_markup=_vote_keyboard(submission.id),
         )
     except Exception:  # pragma: no cover - cosmetic
         logger.exception("Failed to edit submission caption")
+
+
+def _vote_weight(user: User) -> float:
+    from app.policy import vote_weight
+
+    return vote_weight(user)
 
 
 async def close_submission(bot: Bot, session: AsyncSession, submission: Submission) -> None:
@@ -201,7 +208,7 @@ async def close_submission(bot: Bot, session: AsyncSession, submission: Submissi
             await bot.edit_message_caption(
                 chat_id=settings.review_channel_id,
                 message_id=submission.channel_message_id,
-                caption=f"Voting closed — net={net:.1f} 👍={up}: {verdict}",
+                caption=t("channel_voting_closed", "en", net=net, up=up, verdict=verdict),
                 reply_markup=None,
             )
         except Exception:
@@ -214,11 +221,11 @@ async def _notify_submission_outcome(
     submitter = await session_get_user_by_id(submission.submitter_id)
     if not submitter:
         return
+    loc = getattr(submitter, "locale", "en") or "en"
     text = (
-        "✅ Your meme was approved and is now in the public pool!"
+        t("submission_approved", loc)
         if decision == SubmissionStatus.APPROVED
-        else "❌ Your submission was rejected (did not meet the public threshold). "
-        "You may re-submit once after the cool-down."
+        else t("submission_rejected", loc)
     )
     try:
         await bot.send_message(submitter.telegram_id, text)
@@ -296,8 +303,7 @@ async def trigger_removal_review(
         )
         msg = await bot.send_message(
             settings.review_channel_id,
-            f"🚨 Removal review for meme <code>{meme.id}</code> ({cause}). "
-            "Vote keep / remove.",
+            t("channel_removal_caption", "en", meme_id=meme.id, cause=cause),
             reply_markup=kb,
         )
         await redis.set(f"rrev_msg:{meme.id}", msg.message_id)
@@ -342,10 +348,10 @@ async def close_removal_review(bot: Bot, session: AsyncSession, meme_id: UUID) -
     )
     if settings.review_channel_id:
         msg_id = await redis.get(f"rrev_msg:{meme_id}")
+        verdict = "KEPT ✅" if keep > remove else "REMOVED ❌"
         try:
             await bot.edit_message_text(
-                f"Removal review closed — keep={keep} remove={remove}: "
-                f"{'KEPT ✅' if keep > remove else 'REMOVED ❌'}",
+                t("channel_removal_closed", "en", keep=keep, remove=remove, verdict=verdict),
                 chat_id=settings.review_channel_id,
                 message_id=msg_id,
                 reply_markup=None,
@@ -445,6 +451,7 @@ async def notify_admins(bot: Bot, text: str) -> None:
 
 async def notify_illegal_match(bot: Bot, submitter: User, file_hash: str) -> None:
     """§5.3: report an illegal-content hash match to admins and the submitter."""
+    loc = getattr(submitter, "locale", "en") or "en"
     await notify_admins(
         bot,
         f"🚫 Illegal-content hash match blocked an upload "
@@ -453,7 +460,7 @@ async def notify_illegal_match(bot: Bot, submitter: User, file_hash: str) -> Non
     try:
         await bot.send_message(
             submitter.telegram_id,
-            "Your upload matched the illegal-content blocklist and was rejected.",
+            t("illegal_submitter", loc),
         )
     except Exception:
         logger.exception("Failed to notify submitter of illegal rejection")

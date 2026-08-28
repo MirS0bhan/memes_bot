@@ -63,8 +63,12 @@ async def _run_metrics() -> None:
     async def handle(request: web.Request) -> web.Response:
         return web.Response(body=render(), content_type="text/plain; version=0.0.4")
 
+    async def healthz(request: web.Request) -> web.Response:
+        return web.Response(text="ok", status=200)
+
     app = web.Application()
     app.router.add_get("/metrics", handle)
+    app.router.add_get("/healthz", healthz)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, settings.listen_host, settings.metrics_port)

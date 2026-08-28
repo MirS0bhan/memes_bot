@@ -11,6 +11,8 @@
 | `/downvote <meme_id>` | DM | community downvote (§5.5.4) |
 | `/appeal <meme_id> <reason>` | DM | appeal a removal |
 | `/policy` | DM | current governance policy text |
+| `/language <en|fa>` | DM | switch the bot's UI language (i18n/l10n, see below) |
+| `/status` | DM | alias of `/mystatus` (your quota, trust & penalties) |
 | `/removals` | DM | public, anonymized removal audit log (§5.7) |
 | review-channel 👍/👎 | channel | cast/change vote on an open submission |
 | review-channel Keep/Remove | channel | removal-review vote |
@@ -46,3 +48,7 @@ window expires.
 `/report <meme_id>` → reason picker → `file_report` records a `Report` and, if
 the same-reason threshold is hit within the window, opens a removal review
 (keep/remove) in the channel. `/downvote` feeds the community-downvote path.
+
+> **i18n / l10n**: every user-facing string is translated via `app/i18n.py`
+> (`en` + `fa`). The user's chosen language is persisted on `User.locale` and
+> changed with `/language`. Review-channel captions include a voting-help line.

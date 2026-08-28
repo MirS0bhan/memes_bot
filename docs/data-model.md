@@ -11,7 +11,7 @@ Defined in `app/models.py` (SQLAlchemy, Postgres). All timestamps are
 | id | bigint (PK) | internal id |
 | telegram_id | bigint, unique | Telegram user id |
 | username | text, nullable | cached, best-effort |
-| locale | text | future i18n |
+| locale | text | user's UI language (`en`/`fa`); set via `/language`, used by `app/i18n.py` |
 | private_quota | int | default `DEFAULT_PRIVATE_QUOTA` (200) |
 | trust_score | int | affects vote weight (§5.4) |
 | is_banned | bool | |
