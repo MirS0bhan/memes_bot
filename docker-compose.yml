@@ -17,7 +17,9 @@ services:
     image: redis:7
 
   bot:
-    build: .
+    # Pull the image built by the CI workflow (GHCR). To build locally instead,
+    # replace the next line with `build: .` (or set MEMEBOT_IMAGE to a local tag).
+    image: ${MEMEBOT_IMAGE:-ghcr.io/example/memes_bot:main}
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-memebot}:${POSTGRES_PASSWORD:-memebot}@postgres:5432/${POSTGRES_DB:-memebot}

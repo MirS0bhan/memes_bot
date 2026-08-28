@@ -6,18 +6,25 @@ and the bot.
 
 ## Docker Compose (default)
 
+The `bot` service pulls a prebuilt image from GHCR (produced by the CI workflow).
+Set `MEMEBOT_IMAGE` to your registry path, e.g.:
+
 ```bash
+export MEMEBOT_IMAGE=ghcr.io/<your-org>/<your-repo>:main
 cp .env.example .env
 # edit: BOT_TOKEN, BOT_USERNAME, ADMIN_USERS, REVIEW_CHANNEL_ID
-docker compose up -d --build
+docker compose up -d
 ```
+
+To build locally instead, replace `image:` with `build: .` under `bot` in
+`docker-compose.yml` (or `docker compose up -d --build`).
 
 `docker-compose.yml` starts `postgres`, `redis`, and `bot` (`ROLE=both`). For
 scale, split roles:
 
 ```bash
-ROLE=web docker compose up -d --scale bot=3 --build   # webhook replicas
-ROLE=worker docker compose run --rm bot                # scheduler only
+ROLE=web MEMEBOT_IMAGE=ghcr.io/<org>/<repo>:main docker compose up -d --scale bot=3   # webhook replicas
+ROLE=worker MEMEBOT_IMAGE=ghcr.io/<org>/<repo>:main docker compose run --rm bot       # scheduler only
 ```
 
 ## Key environment variables
