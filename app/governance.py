@@ -296,8 +296,8 @@ async def trigger_removal_review(
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="Keep", callback_data=f"rrev:{meme.id}:keep"),
-                    InlineKeyboardButton(text="Remove", callback_data=f"rrev:{meme.id}:remove"),
+                    InlineKeyboardButton(text=t("keep", "en"), callback_data=f"rrev:{meme.id}:keep"),
+                    InlineKeyboardButton(text=t("remove", "en"), callback_data=f"rrev:{meme.id}:remove"),
                 ]
             ]
         )

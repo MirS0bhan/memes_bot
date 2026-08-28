@@ -9,7 +9,7 @@ Missing keys fall back to English, so partially-translated locales still render.
 
 from __future__ import annotations
 
-DEFAULT_LOCALE = "en"
+DEFAULT_LOCALE = "fa"
 SUPPORTED_LOCALES = ["en", "fa"]
 
 EN = {
@@ -88,6 +88,18 @@ EN = {
     "language_current": "🌐 Current language: {lang}. Use /language &lt;en|fa&gt; to change.",
     "language_usage": "Usage: /language &lt;en|fa&gt;",
     "error_generic": "Something went wrong. Please try again later.",
+    "find_header_query": "Results for “{query}”:",
+    "find_header_recent": "Recent memes:",
+    "send_not_found": "Meme not found.",
+    "send_not_yours": "Not yours.",
+    "sent": "Sent!",
+    "report_pick_reason": "Pick a report reason:",
+    "policy_updated": "Policy v{ver} updated.",
+    "inline_no_results_title": "No results",
+    "more_button": "More ▶",
+    "send_button": "▶ send #{rank}",
+    "keep": "Keep",
+    "remove": "Remove",
 }
 
 FA = {
@@ -166,6 +178,18 @@ FA = {
     "language_current": "🌐 زبان فعلی: {lang}. برای تغییر از /language &lt;en|fa&gt; استفاده کنید.",
     "language_usage": "کاربرد: /language &lt;en|fa&gt;",
     "error_generic": "خطایی رخ داد. لطفاً بعداً دوباره تلاش کنید.",
+    "find_header_query": "نتایج برای «{query}»:",
+    "find_header_recent": "میم‌های اخیر:",
+    "send_not_found": "میم پیدا نشد.",
+    "send_not_yours": "مال شما نیست.",
+    "sent": "فرستاده شد!",
+    "report_pick_reason": "یک دلیل گزارش انتخاب کنید:",
+    "policy_updated": "سیاست نسخه {ver} به‌روزرسانی شد.",
+    "inline_no_results_title": "نتیجه‌ای نیست",
+    "more_button": "بیشتر ▶",
+    "send_button": "▶ ارسال #{rank}",
+    "keep": "نگه داشتن",
+    "remove": "حذف",
 }
 
 _TABLES = {"en": EN, "fa": FA}

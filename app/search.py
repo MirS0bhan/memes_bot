@@ -37,12 +37,13 @@ async def search(
     WITH matched AS (
       SELECT m.id, m.owner_id, m.visibility, m.media_type, m.telegram_file_id,
              m.title, m.tags, m.nsfw, m.popularity,
-        cardinality(tags & string_to_array(lower(:q), ' ')) AS tag_overlap,
+        (SELECT count(*) FROM unnest(tags) AS t(tag)
+         WHERE t.tag = ANY(string_to_array(lower(:q), ' '))) AS tag_overlap,
         ts_rank(m.search_tsv, plainto_tsquery('simple', :q)) AS text_rank,
         GREATEST(similarity(m.title, :q),
                  similarity(coalesce(m.description, ''), :q), 0) AS fuzzy,
         (SELECT count(*) FROM reports r WHERE r.meme_id = m.id) AS report_count,
-        EXTRACT(EPOCH, now() - m.submitted_at) / 86400.0 AS age_days
+        EXTRACT(EPOCH FROM (now() - m.submitted_at)) / 86400.0 AS age_days
       FROM memes m
       WHERE (
               (m.visibility = 'public'

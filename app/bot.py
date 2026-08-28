@@ -368,11 +368,11 @@ async def _render_find(
         lines.append(f"{rank}. {r['title'] or ', '.join(r['tags'])} "
                      f"<code>[{r['media_type']}]</code>")
         buttons.append([InlineKeyboardButton(
-            text=f"▶ send #{rank}", callback_data=f"send:{r['id']}:{rank}")])
+            text=t("send_button", locale, rank=rank), callback_data=f"send:{r['id']}:{rank}")])
     if len(results) == 8:
-        buttons.append([InlineKeyboardButton(text="More ▶", callback_data=f"more:{offset + 8}")])
+        buttons.append([InlineKeyboardButton(text=t("more_button", locale), callback_data=f"more:{offset + 8}")])
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    header = f"Results for “{query}”:" if query else "Recent memes:"
+    header = t("find_header_query", locale, query=query) if query else t("find_header_recent", locale)
     text = header + "\n" + "\n".join(lines)
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
@@ -402,13 +402,14 @@ async def on_send(callback: CallbackQuery, state: FSMContext):
     _, meme_id, rank = callback.data.split(":")
     rank = int(rank)
     user = await ensure_user(callback)
+    loc = _loc(user)
     async with SessionLocal() as session:
         meme = await get_meme(session, meme_id)
         if not meme:
-            await callback.answer("Meme not found.", show_alert=True)
+            await callback.answer(t("send_not_found", loc), show_alert=True)
             return
         if meme.visibility == Visibility.PRIVATE and meme.owner_id != user.id:
-            await callback.answer("Not yours.", show_alert=True)
+            await callback.answer(t("send_not_yours", loc), show_alert=True)
             return
         meme_dict = {
             "id": str(meme.id),
@@ -420,7 +421,7 @@ async def on_send(callback: CallbackQuery, state: FSMContext):
         data = await state.get_data()
         await log_retrieval(session, meme.id, user.id, data.get("query", ""), rank)
         await session.commit()
-    await callback.answer("Sent!")
+    await callback.answer(t("sent", loc))
 
 
 # ── inline mode ─────────────────────────────────────────────────────────────
@@ -465,7 +466,7 @@ async def inline_handler(query: InlineQuery):
 
         if not results:
             results = [InlineQueryResultArticle(
-                id="noop", title="No results",
+                id="noop", title=t("inline_no_results_title", _loc(user)),
                 input_message_content=InputTextMessageContent(message_text="—"),
                 description=t("find_no_results", _loc(user), query=query.query),
             )]
@@ -537,7 +538,7 @@ async def cmd_report(msg: Message, state: FSMContext):
         [InlineKeyboardButton(text=r.value, callback_data=f"rep:{meme_id}:{r.value}")]
         for r in reasons
     ]
-    await msg.answer(t("report_usage", loc), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await msg.answer(t("report_pick_reason", loc), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 @dp.callback_query(F.data.startswith("rep:"))
@@ -751,7 +752,7 @@ async def cmd_admin(msg: Message):
                 doc = PolicyDocument(version=DEFAULT_POLICY_VERSION, body=body)
                 session.add(doc)
             await session.commit()
-        await msg.answer(f"Policy v{DEFAULT_POLICY_VERSION} updated.")
+        await msg.answer(t("policy_updated", loc, ver=DEFAULT_POLICY_VERSION))
         return
 
     await msg.answer(t("unknown_admin_sub", loc))
