@@ -347,39 +347,85 @@ class FindFlow(StatesGroup):
     pass
 
 
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.utils.text_decorations import html_decoration as hd
+
+PAGE_SIZE = 8
+
+
 async def _render_find(
     target: Message | CallbackQuery, state: FSMContext, owner_id: int, locale: str
 ) -> None:
     data = await state.get_data()
     query = data.get("query", "")
     offset = int(data.get("offset", 0))
-    results = await search(query, owner_id, include_nsfw=False, limit=8, offset=offset)
+
+    # Fetch one extra row to know if a "more" page actually exists,
+    # instead of inferring it from a full page.
+    results = await search(
+        query, owner_id, include_nsfw=False, limit=PAGE_SIZE + 1, offset=offset
+    )
+    has_more = len(results) > PAGE_SIZE
+    results = results[:PAGE_SIZE]
+
+    safe_query = hd.quote(query) if query else query
+
     if not results:
-        text = t("find_no_results", locale, query=query) if query else t("no_memes", locale)
+        text = (
+            t("find_no_results", locale, query=safe_query)
+            if query
+            else t("no_memes", locale)
+        )
         if isinstance(target, CallbackQuery):
-            await target.message.edit_text(text)
+            await _safe_edit_text(target.message, text)
+            await target.answer()
         else:
             await target.answer(text)
         return
+
     lines = []
     buttons = []
     for i, r in enumerate(results):
         rank = offset + i + 1
-        lines.append(f"{rank}. {r['title'] or ', '.join(r['tags'])} "
-                     f"<code>[{r['media_type']}]</code>")
-        buttons.append([InlineKeyboardButton(
-            text=t("send_button", locale, rank=rank), callback_data=f"send:{r['id']}:{rank}")])
-    if len(results) == 8:
-        buttons.append([InlineKeyboardButton(text=t("more_button", locale), callback_data=f"more:{offset + 8}")])
+        label = hd.quote(r["title"] or ", ".join(r["tags"] or []))
+        lines.append(f"{rank}. {label} <code>[{r['media_type']}]</code>")
+        buttons.append([
+            InlineKeyboardButton(
+                text=t("send_button", locale, rank=rank),
+                callback_data=f"send:{r['id']}:{rank}",
+            )
+        ])
+
+    if has_more:
+        buttons.append([
+            InlineKeyboardButton(
+                text=t("more_button", locale),
+                callback_data=f"more:{offset + PAGE_SIZE}",
+            )
+        ])
+
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    header = t("find_header_query", locale, query=query) if query else t("find_header_recent", locale)
+    header = (
+        t("find_header_query", locale, query=safe_query)
+        if query
+        else t("find_header_recent", locale)
+    )
     text = header + "\n" + "\n".join(lines)
+
     if isinstance(target, CallbackQuery):
-        await target.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        await _safe_edit_text(target.message, text, parse_mode="HTML", reply_markup=kb)
         await target.answer()
     else:
         await target.answer(text, parse_mode="HTML", reply_markup=kb)
 
+
+async def _safe_edit_text(message: Message, text: str, **kwargs) -> None:
+    """edit_text that swallows Telegram's 'message is not modified' error."""
+    try:
+        await message.edit_text(text, **kwargs)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            raise
 
 @dp.message(Command("find"))
 async def cmd_find(msg: Message, state: FSMContext):
