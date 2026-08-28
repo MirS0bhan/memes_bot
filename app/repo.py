@@ -4,6 +4,7 @@ import hashlib
 from uuid import UUID
 
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -30,7 +31,14 @@ async def get_or_create_user(
             private_quota=settings.default_private_quota,
         )
         session.add(user)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            # Another request created the user concurrently; roll back and re-read.
+            await session.rollback()
+            user = await session.scalar(
+                select(User).where(User.telegram_id == telegram_id)
+            )
     elif username and user.username != username:
         user.username = username
     return user

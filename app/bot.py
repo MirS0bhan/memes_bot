@@ -100,7 +100,12 @@ def is_banned(user: User) -> bool:
 async def ensure_user(msg: Message | CallbackQuery) -> User:
     tg = msg.from_user
     async with SessionLocal() as session:
-        return await get_or_create_user(session, tg.id, tg.username)
+        user = await get_or_create_user(session, tg.id, tg.username)
+        # Persist so the user row exists before later handlers insert memes
+        # (which reference owner_id in a fresh session). See FK violation fix.
+        await session.commit()
+        await session.refresh(user)
+        return user
 
 
 # ── FSM ──────────────────────────────────────────────────────────────────────
