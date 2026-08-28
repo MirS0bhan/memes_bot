@@ -5,9 +5,11 @@ tuned without a redeploy.
 """
 
 from functools import lru_cache
+from typing import Callable
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings.sources import EnvSettingsSource
 
 
 class Settings(BaseSettings):
@@ -20,6 +22,7 @@ class Settings(BaseSettings):
     bot_username: str = Field(default="", alias="BOT_USERNAME")
 
     admin_users: list[int] = Field(default_factory=list, alias="ADMIN_USERS")
+    illegal_hashes: list[str] = Field(default_factory=list, alias="ILLEGAL_HASHES")
 
     @field_validator("admin_users", mode="before")
     @classmethod
@@ -34,6 +37,34 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [h.strip().lower() for h in v.split(",") if h.strip()]
         return v
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        # Parse comma-separated list env vars ourselves so empty strings -> [].
+        # pydantic-settings would otherwise json.loads() the raw value and fail.
+        return (
+            init_settings,
+            cls._ListEnvSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
+
+
+    class _ListEnvSource(EnvSettingsSource):
+        def prepare_field_value(self, field_name, field, field_value, value_is_complex):
+            if field_name in ("admin_users", "illegal_hashes") and isinstance(field_value, str):
+                parts = [x.strip() for x in field_value.split(",") if x.strip()]
+                if field_name == "admin_users":
+                    return [int(x) for x in parts]
+                return [p.lower() for p in parts]
+            return super().prepare_field_value(field_name, field, field_value, value_is_complex)
 
     database_url: str = Field(
         default="postgresql+asyncpg://memebot:memebot@localhost:5432/memebot",
@@ -98,9 +129,6 @@ class Settings(BaseSettings):
     s3_secret_key: str | None = Field(default=None, alias="S3_SECRET_KEY")
     # Durable media store: "s3" if S3 configured, else local filesystem at storage_path.
     storage_path: str = Field(default="./storage", alias="STORAGE_PATH")
-
-    # ── Illegal-content blocklist (spec §5.3) ──────────────────────────────
-    illegal_hashes: list[str] = Field(default_factory=list, alias="ILLEGAL_HASHES")
 
     # ── Community downvote removal (spec §5.5.4) ───────────────────────────
     community_downvote_threshold: int = Field(default=20, alias="COMMUNITY_DOWNVOTE_THRESHOLD")
