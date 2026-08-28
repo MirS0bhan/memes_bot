@@ -1,75 +1,55 @@
-# Memes Bot
+# MemeBot — Community-Curated Meme Retrieval Bot for Telegram (v1)
 
-A personal Telegram inline bot to store and search media (photos, GIFs, videos, voice) by keywords.
+A Telegram bot that retrieves memes by natural keywords from a **private** pool
+(per-user, quota-capped) and a **public** pool (community-curated via voting in a
+review channel). Public additions pass through a public vote; removals follow an
+explicit published policy; everything is observable and audit-logged.
 
-[فارسی](README.fa.md)
+> Implemented per the spec milestone order (§10). Cloud-native: stateless bot
+> process, Postgres system of record, Redis for rate limiting / FSM / caches,
+> optional S3-compatible object storage as a durable media fallback.
 
----
+## Documentation
 
-### Requirements
+Full, separated docs live in [`docs/`](docs/README.md):
 
-- A server with [Docker](https://docs.docker.com/engine/install/) installed
-- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+- [Architecture](docs/architecture.md) — components, roles, webhook/polling, storage, observability
+- [Data model](docs/data-model.md) — entities & state machine (§2, §4)
+- [Governance](docs/governance.md) — voting, thresholds, removal, appeals, trust (§5)
+- [Search](docs/search.md) — tiered ranking + media delivery (§6)
+- [Commands](docs/commands.md) — full command/inline surface (§8)
+- [Deployment](docs/deployment.md) — Docker, env vars, scaling, limitations
 
-### Setup
-
-**1. Create the bot in BotFather**
-- `/newbot` → get your token
-- `/setinline` → enable inline mode, set a placeholder (e.g. `Search memes...`)
-
-**2. Find your Telegram user ID**
-
-You need your numeric Telegram user ID to whitelist yourself.
-
-- **Easiest:** forward any message to [@userinfobot](https://t.me/userinfobot) — it replies with your ID
-- **Alternative:** open Telegram Web, click your profile, the number in the URL is your ID
-- **For multiple users:** repeat for each person and separate IDs with commas
-
-**3. Clone and configure**
+## Quick start
 
 ```bash
-git clone https://git.goyban.com/goyban/memes_bot
-cd memes_bot
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```env
-BOT_TOKEN=your_telegram_bot_token_here
-ALLOWED_USERS=123456789,987654321
-```
-
-**4. Run**
-
-```bash
+cp .env.example .env        # set BOT_TOKEN, BOT_USERNAME, ADMIN_USERS, REVIEW_CHANNEL_ID
 docker compose up -d --build
 ```
 
-The database will be saved in `./bot_db/media.db`.
+`docker-compose.yml` starts Postgres, Redis, and the bot (`ROLE=both`). For
+larger scale, run `ROLE=web` replicas behind a load balancer and a separate
+`ROLE=worker` for scheduled jobs.
 
-### Usage
+## What's implemented (v1)
 
-**Adding media** — send the bot a photo, GIF, video, or voice message, then type keywords when prompted (comma-separated or one per message), then `/done`.
+- Private pool: `/add`, `/find`, quota enforcement, inline search.
+- Tiered search ranking (tag overlap + FTS + pg_trgm) with tunable blend.
+- Public submissions + review-channel voting + state machine.
+- Report → removal-review pipeline, admin/legal removal, community downvote,
+  appeals, illegal-content blocklist.
+- Transparency: `/policy`, `/mystatus`, `/removals`, versioned policy doc.
+- Redis FSM, Prometheus `/metrics`, JSON structured logs, rate limiting.
+- Media mirrored from Telegram **once**; sent by cached `file_id` with
+  self-healing re-upload on staleness (verified by tests).
 
-**Searching inline** — in any chat type `@yourbotusername keyword` to search and send.
+## Verification
 
-Telegram suggests these commands as you type `/`, with a short description beside each suggestion.
+`pytest` (9 tests) covers the §6.2 store-once contract and the §5.2/§5.4 policy
+math. A live end-to-end run additionally needs Postgres, Redis, and a real
+Telegram token.
 
-**Commands**
-
-| Command | Description |
-|---|---|
-| `/start` | Start the bot and show usage instructions |
-| `/menu` | Show the available commands |
-| `/list` | Show all saved media |
-| `/edit [search]` | Select a meme and edit its keywords (admin only) |
-| `/delete <id>` | Remove an entry (get ID from `/list`; admin only) |
-| `/cancel` | Cancel current add operation |
-
-### Moving to another server
-
-The only files you need to transfer are:
-
-- `.env`
-- `bot_db/media.db`
+```bash
+uv venv && uv pip install -r requirements.txt
+pytest -q
+```

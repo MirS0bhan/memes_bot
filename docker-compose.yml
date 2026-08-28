@@ -1,10 +1,31 @@
 services:
-  gif-bot:
-    container_name: memes-bot
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-memebot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-memebot}
+      POSTGRES_DB: ${POSTGRES_DB:-memebot}
+    volumes:
+      - ./bot_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-memebot}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+
+  bot:
     build: .
-    restart: unless-stopped
     env_file: .env
     environment:
-      DB_PATH: /data/media.db
-    volumes:
-      - ./bot_db:/data
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-memebot}:${POSTGRES_PASSWORD:-memebot}@postgres:5432/${POSTGRES_DB:-memebot}
+      REDIS_URL: redis://redis:6379/0
+      ROLE: ${ROLE:-both}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
