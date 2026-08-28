@@ -47,8 +47,13 @@ async def search(
       FROM memes m
       WHERE (
               (m.visibility = 'public'
+               -- owner always sees their own private memes, nsfw or not
                OR (m.visibility = 'private' AND m.owner_id = :owner))
-              AND (m.nsfw = false OR :nsfw)
+              AND (
+                    m.nsfw = false
+                    OR :nsfw
+                    OR (m.visibility = 'private' AND m.owner_id = :owner)
+                  )
             )
         AND (
               (:q = '')
@@ -65,7 +70,10 @@ async def search(
            + (:w3 * EXP(-age_days / 30.0))
            - (:w4 * report_count) AS score
     FROM matched
-    ORDER BY score DESC
+    -- deterministic tiebreaker: without this, ties in `score` (very common
+    -- for zero-relevance rows) make ORDER BY unstable across separate
+    -- LIMIT/OFFSET calls, so paginated "more" pages can skip or repeat rows.
+    ORDER BY score DESC, id ASC
     LIMIT :limit OFFSET :offset
     """
     async with SessionLocal() as session:
